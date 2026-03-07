@@ -1,6 +1,6 @@
-pandas==2.2.1
-requests==2.31.0
-python-dotenv==1.0.1
-sqlalchemy==2.0.25
-psycopg2-binary==2.9.9
-apache-airflow==2.8.1
+requests
+pandas
+psycopg2-binary
+boto3
+minio
+python-dotenv
