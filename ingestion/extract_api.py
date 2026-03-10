@@ -15,7 +15,7 @@ data = response.json()
 
 df = pd.DataFrame(data)
 
-date = datetime.now().strftime("%Y-%m-%d")
+date = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 path = f"/opt/airflow/scripts/crypto_{date}.csv"
 
