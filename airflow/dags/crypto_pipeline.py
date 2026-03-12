@@ -52,7 +52,7 @@ with DAG(
 
         dbt_build = BashOperator(
             task_id="dbt_build",
-            bash_command="/opt/airflow/scripts/dbt_build.sh"
+            bash_command="cd /opt/airflow/dbt && dbt build --profiles-dir ."
         )
 
     # ----------------------

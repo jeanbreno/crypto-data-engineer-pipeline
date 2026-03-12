@@ -8,5 +8,5 @@ crypto_pipeline:
       password: airflow
       port: 5432
       dbname: crypto_warehouse
-      schema: analytics
+      schema: bronze
       threads: 4

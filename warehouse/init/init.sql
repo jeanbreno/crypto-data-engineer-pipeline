@@ -1,15 +1,52 @@
 CREATE DATABASE crypto_warehouse;
 
+\c crypto_warehouse
+
+
+-- criar schemas
 CREATE SCHEMA IF NOT EXISTS bronze;
 CREATE SCHEMA IF NOT EXISTS silver;
 CREATE SCHEMA IF NOT EXISTS gold;
 
-GRANT ALL PRIVILEGES ON DATABASE crypto_warehouse TO airflow;
-grant all privileges on schema bronze to airflow;
-grant all privileges on schema silver to airflow;
-grant all privileges on schema gold to airflow;
 
-CREATE TABLE IF NOT EXISTS crypto_warehouse.bronze.crypto_prices (
+-- garantir usuario airflow
+DO
+$$
+BEGIN
+   IF NOT EXISTS (
+      SELECT FROM pg_catalog.pg_roles WHERE rolname = 'airflow'
+   ) THEN
+      CREATE ROLE airflow LOGIN PASSWORD 'airflow';
+   END IF;
+END
+$$;
+
+
+-- permissoes airflow
+GRANT ALL PRIVILEGES ON DATABASE crypto_warehouse TO airflow;
+
+GRANT USAGE ON SCHEMA bronze TO airflow;
+GRANT USAGE ON SCHEMA silver TO airflow;
+GRANT USAGE ON SCHEMA gold TO airflow;
+
+GRANT CREATE ON SCHEMA bronze TO airflow;
+GRANT CREATE ON SCHEMA silver TO airflow;
+GRANT CREATE ON SCHEMA gold TO airflow;
+
+
+-- permissoes postgres
+GRANT ALL PRIVILEGES ON SCHEMA bronze TO postgres;
+GRANT ALL PRIVILEGES ON SCHEMA silver TO postgres;
+GRANT ALL PRIVILEGES ON SCHEMA gold TO postgres;
+
+
+-- search path
+ALTER ROLE airflow SET search_path TO bronze, silver, gold, public;
+
+
+-- tabela bronze
+CREATE TABLE IF NOT EXISTS bronze.crypto_prices (
+
     id TEXT,
     symbol TEXT,
     name TEXT,
