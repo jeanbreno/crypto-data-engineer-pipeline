@@ -16,7 +16,10 @@ x-airflow-common: &airflow-common
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
-    - ./ingestion:/opt/airflow/scripts
+    - ./ingestion:/opt/airflow/ingestion
+    - ./scripts:/opt/airflow/scripts
+    - ./quality:/opt/airflow/quality
+    - ./dbt:/opt/airflow/dbt
   depends_on:
     postgres:
       condition: service_healthy
@@ -109,6 +112,7 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
+      - "8081:8081"
     command: >
       bash -c "
       exec airflow webserver
@@ -137,20 +141,6 @@ services:
       timeout: 10s
       retries: 5
 
-  metabase:
-    image: metabase/metabase
-    restart: always
-    ports:
-      - "3000:3000"
-    volumes:
-      - metabase_data:/metabase-data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-
 volumes:
   postgres_data:
   minio_data:
-  metabase_data:
