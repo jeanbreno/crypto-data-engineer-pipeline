@@ -5,4 +5,4 @@ SELECT
     current_price,
     market_cap,
     total_volume
-FROM crypto_prices
+FROM bronze.crypto_prices;

@@ -11,22 +11,25 @@ O objetivo do projeto é demonstrar uma **arquitetura moderna de dados**, simula
 # 🧠 Arquitetura
 
 ```text
-API / Sources
-     │
-     ▼
-Airflow (Orquestração)
-     │
-     ▼
-Data Lake (MinIO / S3)
-     │
-     ▼
-dbt (Transformações)
-     │
-     ▼
-Data Warehouse (PostgreSQL)
-     │
-     ▼
-Dashboard (Metabase)
+API Crypto
+   ↓
+Airflow ingestion DAG (Python)
+   ↓
+Data lake MinIO (RAW)
+   ↓
+Airflow ingestion DAG (Python)
+   ↓
+Data Warehouse Postgres (Bronze)
+   ↓
+dbt
+   ↓
+Data Warehouse Postgres (Silver - dados tratados)
+   ↓
+dbt
+   ↓
+Data Warehouse Postgres (Gold - métricas analíticas)
+   ↓
+Metabase (Dashboard)
 ```
 
 Ferramentas utilizadas:
