@@ -1,24 +1,80 @@
 import requests
-import pandas as pd
+import json
+import os
 from datetime import datetime
+from minio import Minio
+from utils.minio_client import get_minio_client
 
-url = "https://api.coingecko.com/api/v3/coins/markets"
+# -----------------------------
+# Configuração
+# -----------------------------
 
-params = {
+BUCKET_NAME = "raw"
+
+API_URL = "https://api.coingecko.com/api/v3/coins/markets"
+
+PARAMS = {
     "vs_currency": "usd",
     "order": "market_cap_desc",
     "per_page": 50
 }
 
-response = requests.get(url, params=params)
+# -----------------------------
+# Conectar no MinIO
+# -----------------------------
+
+client = get_minio_client()
+
+# garantir que bucket existe
+if not client.bucket_exists(BUCKET_NAME):
+    client.make_bucket(BUCKET_NAME)
+
+
+# -----------------------------
+# Buscar dados da API
+# -----------------------------
+
+response = requests.get(API_URL, params=PARAMS)
 data = response.json()
 
-df = pd.DataFrame(data)
+timestamp = datetime.utcnow()
 
-date = datetime.now().strftime("%Y-%m-%d")
+payload = {
+    "timestamp": timestamp.isoformat(),
+    "data": data
+}
 
-path = f"/opt/airflow/scripts/crypto_{date}.csv"
 
-df.to_csv(path, index=False)
+# -----------------------------
+# salvar local temporário
+# -----------------------------
 
-print("Arquivo salvo:", path)
+file_name = f"crypto_prices_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
+
+with open(file_name, "w") as f:
+    json.dump(payload, f)
+
+
+# -----------------------------
+# caminho no data lake
+# -----------------------------
+
+object_path = (
+    f"crypto/"
+    f"year={timestamp.year}/"
+    f"month={timestamp.month:02d}/"
+    f"day={timestamp.day:02d}/"
+    f"{file_name}"
+)
+
+# -----------------------------
+# upload para MinIO
+# -----------------------------
+
+client.fput_object(
+    BUCKET_NAME,
+    object_path,
+    file_name
+)
+
+print("Upload concluído:", object_path)

@@ -1,95 +1,154 @@
 version: "3.8"
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.8.1
+  image: airflow-custom
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_PRE_PING: "True"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
     - ./ingestion:/opt/airflow/scripts
   depends_on:
-    - postgres
+    postgres:
+      condition: service_healthy
 
 services:
 
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      -c "
+      echo 'Esperando PostgreSQL iniciar...';
+      until pg_isready -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER}; do
+        sleep 2;
+      done;
+
+      echo 'PostgreSQL pronto';
+
+      airflow db migrate &&
+      airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname admin --lastname admin --role Admin --email admin@email.com
+      "
+
   postgres:
-    image: postgres:14
+    image: postgres:17
+    restart: always
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./warehouse/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio
+    restart: always
+    env_file:
+      - .env
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
-  airflow-init:
-    <<: *airflow-common
-    entrypoint: /bin/bash
-    command: >
-      -c "
-      pip install -r /opt/airflow/requirements.txt &&
-      airflow db migrate &&
-      airflow users create
-        --username admin
-        --password admin
-        --firstname admin
-        --lastname admin
-        --role Admin
-        --email admin@email.com || true
+  createbuckets:
+    image: minio/mc
+    restart: on-failure
+    depends_on:
+      minio:
+        condition: service_healthy
+    env_file:
+      - .env
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb myminio/raw || true;
+      mc mb myminio/raw/processed/ || true;
+      exit 0;
       "
 
   airflow-webserver:
     <<: *airflow-common
+    restart: always
     depends_on:
-      - airflow-init
+      postgres:
+          condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     command: >
       bash -c "
-      pip install -r /opt/airflow/requirements.txt &&
-      until airflow db check; do
-        echo 'Waiting for Airflow DB...';
-        sleep 5;
-      done;
       exec airflow webserver
       "
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
 
   airflow-scheduler:
     <<: *airflow-common
+    restart: always
     depends_on:
-      - airflow-init
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     command: >
       bash -c "
-      pip install -r /opt/airflow/requirements.txt &&
-      until airflow db check; do
-        echo 'Waiting for Airflow DB...';
-        sleep 5;
-      done;
       exec airflow scheduler
       "
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   metabase:
     image: metabase/metabase
+    restart: always
     ports:
       - "3000:3000"
     volumes:
       - metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
 
 volumes:
   postgres_data:
