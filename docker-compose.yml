@@ -1,18 +1,21 @@
 version: "3.8"
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.8.1
+  image: airflow-custom
+  build:
+    context: .
+    dockerfile: Dockerfile
   env_file:
     - .env
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_PRE_PING: "True"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
-    - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     - ./ingestion:/opt/airflow/scripts
   depends_on:
     postgres:
@@ -23,15 +26,24 @@ services:
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: >
       -c "
-      pip install -r /opt/airflow/requirements.txt &&
+      echo 'Esperando PostgreSQL iniciar...';
+      until pg_isready -h ${POSTGRES_HOST} -p 5432 -U ${POSTGRES_USER}; do
+        sleep 2;
+      done;
+
+      echo 'PostgreSQL pronto';
+
       airflow db migrate &&
       airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname admin --lastname admin --role Admin --email admin@email.com
       "
 
   postgres:
-    image: postgres:14
+    image: postgres:17
     restart: always
     env_file:
       - .env
@@ -43,6 +55,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./warehouse/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -82,9 +95,7 @@ services:
       sleep 5;
       mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
       mc mb myminio/raw || true;
-      mc mb myminio/bronze || true;
-      mc mb myminio/silver || true;
-      mc mb myminio/gold || true;
+      mc mb myminio/raw/processed/ || true;
       exit 0;
       "
 
@@ -92,13 +103,14 @@ services:
     <<: *airflow-common
     restart: always
     depends_on:
+      postgres:
+          condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
     command: >
       bash -c "
-      pip install -r /opt/airflow/requirements.txt &&
       exec airflow webserver
       "
     healthcheck:
@@ -111,11 +123,12 @@ services:
     <<: *airflow-common
     restart: always
     depends_on:
+      postgres:
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     command: >
       bash -c "
-      pip install -r /opt/airflow/requirements.txt &&
       exec airflow scheduler
       "
     healthcheck:
