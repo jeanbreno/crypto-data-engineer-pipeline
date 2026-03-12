@@ -16,9 +16,9 @@ with DAG(
 
     ingest_api
 
-    fetch_api = BashOperator(
-        task_id="fetch_crypto_api",
-        bash_command="python /opt/airflow/scripts/fetch_crypto_prices.py"
-    )
+    # fetch_api = BashOperator(
+    #     task_id="fetch_crypto_api",
+    #     bash_command="python /opt/airflow/scripts/fetch_crypto_prices.py"
+    # )
 
-    fetch_api
+    # fetch_api
